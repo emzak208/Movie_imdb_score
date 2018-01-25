@@ -1,0 +1,537 @@
+---
+title: "Regression Analysis of IMDB 5000 Movies Datasets"
+output: html_notebook
+---
+Purpose:
+By doing a regresson analysis, we want to know:
+1) Among the 27 variables given, which of them are critical in telling the IMDB rating of a movie.
+2) Is there any correlation between genre & IMDB raging,face number in poster & IMDB rating,director name & IMDB rating and duration & IMDB rating.
+3) Predict the IMDB Score using our model
+
+```{r}
+m<- read.csv('movie_metadata.csv')
+```
+## Step 1: Data Collection 
+This data set was found from Kaggle. The author scraped 5000+ movies from IMDB website using a Python library called "scrapy" and obtain all needed 28 variables for 5043 movies and 4906 posters (998MB), spanning across 100 years in 66 countries. There are 2399 unique director names, and thousands of actors/actresses. Below are the 28 variables:
+"movie_title" "color" "num_critic_for_reviews" "movie_facebook_likes" "duration" "director_name" "director_facebook_likes" "actor_3_name" "actor_3_facebook_likes" "actor_2_name" "actor_2_facebook_likes" "actor_1_name" "actor_1_facebook_likes" "gross" "genres" "num_voted_users" "cast_total_facebook_likes" "facenumber_in_poster" "plot_keywords" "movie_imdb_link" "num_user_for_reviews" "language" "country" "content_rating" "budget" "title_year" "imdb_score" "aspect_ratio"
+
+This dataset is a proof of concept. It can be used for experimental and learning purpose.For comprehensive movie analysis and accurate movie ratings prediction, 28 attributes from 5000 movies might not be enough. A decent dataset could contain hundreds of attributes from 50K or more movies, and requires tons of feature engineering.
+
+## Step 2 : Data cleaning and exploration
+
+Assign the first word of genres as the genre of each movie:(genres been split into words in Excel):
+```{r}
+# remove columns X-X.8
+which(colnames(m)=='genres')
+which(colnames(m)=='X.8')
+m<-m[,-c(11:19)]
+```
+
+Only keep movie data for USA, bacause the "budget" variable was not all converted to US dollars, which might cause a problem in later analysis. If we want to convert all budgets into US dollarts, we have to take in to consideration for inflation as well. This might make the problem more complicated. Therefore, for pratice purpose, we decided to only study data for movies of USA. 
+```{r}
+movie.usa<-m[which(m[,'country']=='USA'),]
+```
+Double check:
+```{r}
+movie.usa$country
+```
+
+Remove 'language' since after removing all countries except for USA, there is only 4 languages aside from English, not meaningful for our prediction. 
+```{r}
+summary(movie.usa$language)
+movie.usa<-movie.usa[, -which(names(movie.usa)=='language')]
+```
+
+Remove 'movie_imdb_link' column since it's not useful for our analysis and store the rest od the data as 'movie'.
+```{r}
+movie.df= data.frame(movie.usa)
+mm<-movie.df[, -which(names(movie.df)=='movie_imdb_link')] 
+```
+
+
+```{r}
+str(mm)
+```
+
+Check for missing values:
+```{r}
+library(Amelia)
+missmap(mm, main = "Missing values vs observed")
+sapply(mm,function(x) sum(is.na(x))) # number of missing values for each variable 
+```
+We noticed that there are many missing values for budget,aspect ratio and gross.
+
+Omit missing values:
+```{r}
+movie<-na.omit(mm)
+sapply(movie,function(x) sum(is.na(x))) # double check for missing values
+```
+
+
+```{r}
+library(psych)
+library(car)
+library(RColorBrewer) 
+library(corrplot)
+library(ggplot2)
+```
+
+Explore title_year predictor:
+```{r}
+range(movie$title_year) # check movie title year
+sum(with(movie,title_year=='2009')) # 145
+sum(with(movie,title_year=='2014')) # 121
+```
+Visualization of title Year vs. Score:
+```{r}
+scatterplot(x=movie$title_year,y=movie$imdb_score)
+```
+There are many outliers for title year. The mojority of data points are around the year of 2000 and later,which make sense that this is less movies in the early years. Also, an intering notice is that movies from early years tend to have higher scores. 
+
+
+
+Visualization of IMDB Score:
+```{r}
+max(movie$imdb_score) # 9.4
+ggplot(movie, aes(x = imdb_score)) +
+        geom_histogram(aes(fill = ..count..), binwidth =0.5) +
+        scale_x_continuous(name = "IMDB Score",
+                           breaks = seq(0,10),
+                           limits=c(1, 10)) +
+        ggtitle("Histogram of Movie IMDB Score") +
+        scale_fill_gradient("Count", low = "blue", high = "red")
+```
+```{r}
+sum(with(movie,imdb_score>=8))
+# 148 movies with IMDB score greater or equal to 8.
+```
+IMDB score looks normal.The highest score is 9.4 out of scale 10. And we can consider movies with a score greater or equal to 8 a great movie from many perspectives.
+
+
+Exploring correlation :
+```{r}
+pairs.panels(movie[c('director_name','duration','facenumber_in_poster','imdb_score','genres')])
+```
+from the plot, only duration and IMBD score has a high correlation.
+face number in posters has a negative correaltion with IMBD score.
+genre has little correlatin with score
+Interesting, director name has no correlation with IMDB score
+
+
+```{r}
+pairs.panels(movie[c('color','actor_1_name','title_year','imdb_score','aspect_ratio','gross')])
+```
+Color and title year has highly positive correlation.
+Color and aspect ratia,gross has smaller positive correlations.
+Actor 1 namem has very small positive correlation with gross, meaning who plays the movies does not have impact on the gross.
+Title year and aspect ratio and color are highly positively correlated.
+IMDB score has very small positive correlation with actor 1 name ,which means who was the actor 1 does not make the movie has a higher score.
+Interestingly, IMDB score has a negative correlation with title year,which means the old movies seems to have a higher score. the result agrees with out pbservation from the scatter plot. 
+IMDB and aspect ratio has  small positive correlation.
+IMDB has a strong positive correlation with gross.
+
+
+Corplot for all numerical variables:
+```{r}
+nums<- sapply(movie,is.numeric) # select numeric columns
+movie.num<- movie[,nums]
+corrplot(cor(movie.num),method='ellipse') 
+```
+Note: corrplot cannot use data.frame, use cor() to change it to matrix.
+
+From the correlation plot, we can tell that:
+Face number in poster has negative correlation with all other predictors.
+Cast total facebook likes and actor 1 facebook likes has a stronger positive correlation.
+budget and gross have strong correaltion which is not surprising.
+Interestingly, IMDB scores has strong positive corrlation with number of critics for review, which means the more the critics review, the higher the score.Duration and number of voted users also have strong positive correlation with IMDB scores. 
+
+
+Find the pairs of correlations
+```{r}
+which(colnames(movie.num)=='title_year')
+movie.num<- movie.num[,-12] # taking out title_year 
+corr.test(movie.num,y=NULL,use='pairwise',method='pearson',adjust='holm',alpha=0.05) # x must be numeric
+```
+```{r}
+# Boxplots for significant categorical predictors
+Boxplot(movie$imdb_score,movie$color)
+
+```
+Black and white movies seems to have a hither meadian rate, and overall a little higher scores. 
+Colors movies have many outliers. 
+
+Boxplot for genre:
+```{r}
+fill <- "Blue"
+line <- "Red"
+ggplot(movie, aes(x = genres, y =imdb_score)) +
+        geom_boxplot(fill = fill, colour = line) +
+        scale_y_continuous(name = "IMDB Score",
+                           breaks = seq(0, 11, 0.5),
+                           limits=c(0, 11)) +
+        scale_x_discrete(name = "Genres") +
+        ggtitle("Boxplot of IMDB Score and Genres")
+```
+From the boxplot of genres, "Documentation" has the highest median score.And Trill movies has the lowest median. But it is also because there is 1 observation for thrill movies in our data set. 
+
+```{r}
+summary(movie$genres)
+```
+
+# Boxplots for "title year':
+```{r}
+library(ggplot2)
+fill <- "Blue"
+line <- "Red"
+ggplot(movie, aes(x = as.factor(title_year), y =imdb_score)) +
+        geom_boxplot(fill = fill, colour = line) +
+        scale_y_continuous(name = "IMDB Score",
+                           breaks = seq(1.5, 10, 0.5),
+                           limits=c(1.5, 10)) +
+        scale_x_discrete(name = "title_year") +
+        ggtitle("Boxplot of IMDB Score and Genres")
+```
+The median of imdb score of all years seem different. So let's try to treat title_year as categorical.
+
+
+```{r}
+# Scatter plot matrix for correlation significant numerical variables
+scatterplotMatrix(~movie$imdb_score+movie$num_voted_users+movie$num_critic_for_reviews+movie$num_user_for_reviews+movie$duration+movie$facenumber_in_poster+movie$gross+movie$movie_facebook_likes+movie$director_facebook_likes+movie$cast_total_facebook_likes+movie$budget)
+```
+
+
+## Step 3: fitting regression model 
+```{r}
+movie.sig<-movie[,c('imdb_score','num_voted_users','num_critic_for_reviews','num_user_for_reviews','duration','facenumber_in_poster','gross','movie_facebook_likes','director_facebook_likes','cast_total_facebook_likes','budget','title_year','genres')]
+```
+
+Step function to check AIC criteria: 
+```{r}
+null=lm(movie.sig$imdb_score~1) # set null model
+summary(null)
+```
+
+1. Full model is linear additive model
+```{r}
+full1=lm(movie.sig$imdb_score~movie.sig$num_voted_users+movie.sig$num_critic_for_reviews+movie.sig$num_user_for_reviews+movie.sig$duration+movie.sig$facenumber_in_poster+movie.sig$gross+movie.sig$movie_facebook_likes+movie.sig$director_facebook_likes+movie.sig$cast_total_facebook_likes+movie.sig$budget+factor(movie.sig$title_year)+factor(movie.sig$genres))
+summary(full1)
+```
+
+```{r}
+step(null,scope = list(lower=null,upper=full1),direction = 'forward')
+```
+
+
+2. full model is polynomial regresison model with interaction terms:
+```{r}
+full2=lm(movie.sig$imdb_score~poly(movie.sig$num_voted_users,2)+poly(movie.sig$num_critic_for_reviews,2)+poly(movie.sig$num_user_for_reviews,2)+poly(movie.sig$duration,2)+movie.sig$facenumber_in_poster+poly(movie.sig$gross,2)+poly(movie.sig$movie_facebook_likes,2)+movie.sig$director_facebook_likes+movie.sig$cast_total_facebook_likes+movie.sig$budget+factor(movie.sig$title_year)+movie.sig$genres+movie.sig$facenumber_in_poster*movie.sig$num_critic_for_reviews+movie.sig$num_user_for_reviews*movie.sig$num_voted_users+movie.sig$num_voted_users*movie.sig$gross+movie.sig$gross*movie.sig$budget)
+summary(full2)
+```
+
+```{r}
+step(null,scope=list(lower=null,upper=full2),direction='forward')
+```
+
+3. full3: additive model with interaction
+```{r}
+full3=
+lm(movie.sig$imdb_score ~movie.sig$num_voted_users+movie.sig$num_critic_for_reviews+movie.sig$num_user_for_reviews+movie.sig$duration+movie.sig$facenumber_in_poster+movie.sig$gross+movie.sig$movie_facebook_likes+movie.sig$director_facebook_likes+movie.sig$cast_total_facebook_likes+movie.sig$budget+factor(movie.sig$title_year)+factor(movie.sig$genres)+movie.sig$duration*movie.sig$num_voted_users+movie.sig$num_voted_users*movie.sig$num_user_for_reviews+movie.sig$gross*movie.sig$budget,data=movie.sig)
+summary(full3)
+```
+
+```{r}
+step(null,scope=list(lower=null,upper=full3),direction='forward')
+```
+
+For convenience to interpret the result, I will start with Full3(additive mode with interactiin terms). After checking residual, then decide should we add higher order terms.
+
+Split data into Test and Train:
+```{r}
+indx = sample(1:nrow(movie.sig), as.integer(0.8*nrow(movie.sig)))
+indx # ramdomize rows, save 90% of data into index
+
+movie_train = movie.sig[indx,]
+movie_test = movie.sig[-indx,]
+```
+
+
+```{r}
+# lm.fit 1: linear model with interaction term from the step function we chose for Full3
+# insig terms: director facebooklike','cast total fb likes','face num in posters'
+#  Chosen Step function(voted,genre, year, critic,users,budget, duration,voted*duration)
+lm.fit1<-lm(imdb_score~num_voted_users+factor(genres)+factor(title_year)+num_critic_for_reviews+num_user_for_reviews+budget+duration+num_voted_users*duration,movie_train)
+summary(lm.fit1)
+```
+The P-value is very samll.All terms are significant but face number in posters is the least significant variable.Adjusted R^2 is 0.4882 (treated year as numeric = 0.4727), which means 48.82% of the variability can be explained by this model. 
+
+
+Do Lack of fit test to see if removing the predictors improve model performance:
+```{r}
+# full4 =full3, but instead of on movie.sig, it's on training data 
+full4<-lm(imdb_score ~num_voted_users+num_critic_for_reviews+num_user_for_reviews+duration+facenumber_in_poster+gross+movie_facebook_likes+director_facebook_likes+cast_total_facebook_likes+budget+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews+gross*budget,data=movie_train)
+anova(full4,lm.fit1) # H0: reduced model fits===lack of fit=0
+```
+P-value is very small, reject null, the reduced model does not fit.
+
+
+Diagnostics:
+```{r}
+plot(lm.fit1)
+# residual vs fitted indicates might be higher order term. Normal plot not good.
+```
+
+```{r}
+library(car)
+residualPlots(lm.fit1)
+```
+All of the residual vs predictor plots have a general trend of curviture, which indicates the current model does not fit. Higher order terms should be included.
+
+Let's add the interaction term for voted num and num-reveiw to see if model improved:
+```{r}
+lm.fit2<-lm(imdb_score~num_voted_users+factor(genres)+factor(title_year)+num_critic_for_reviews+num_user_for_reviews+budget+duration+num_voted_users*duration+num_voted_users*num_user_for_reviews,movie_train)
+summary(lm.fit2)
+```
+Adding interaction with num voted and num review is not significant, therefore not helping.
+
+Try fit model based on full4, but dropping insig terms:
+Then do lack of fit with full4.
+```{r}
+full4<-lm(imdb_score ~num_voted_users+num_critic_for_reviews+num_user_for_reviews+duration+facenumber_in_poster+gross+movie_facebook_likes+director_facebook_likes+cast_total_facebook_likes+budget+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews+gross*budget,data=movie_train)
+summary(full4)
+```
+
+```{r}
+lm.fit3<-lm(imdb_score ~num_voted_users+num_critic_for_reviews+num_user_for_reviews+duration+gross+movie_facebook_likes+budget+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews+gross*budget,data=movie_train)
+summary(lm.fit3)
+```
+
+LAck of fit for full4 and lm.fit3
+```{r}
+anova(full4,lm.fit3)
+```
+Dropping insig terms help improve model.
+
+Note: Step function is not really helping in deciding which predictors to put in model, since when doing lack of fit for (full3,model with predictor chooseing step) indicates that the reduced model does not fit---> dropping terms as indicating in Step function is not a good choice.
+
+
+Fit model with higer order terms:
+```{r}
+# lm.fit4: model based on lm.fit3 adding higer order for all numerical variables 
+lm.fit4<-lm(imdb_score ~poly(num_voted_users,2)+poly(num_critic_for_reviews,2)+poly(num_user_for_reviews,2)+poly(duration,2)+poly(gross,2)+poly(movie_facebook_likes,2)+poly(budget,2)+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews+gross*budget,data=movie_train)
+summary(lm.fit4)
+```
+The second order term for 'gross' is not sig, can be droped.
+movie fb like is not sig, can be drop
+
+
+```{r}
+# lm.fit5: based on lm.fit4 dropping he second order term for 'gross' is not sig, can be droped movie fb like is not sig, can be drop nad gross and budget interaction.
+lm.fit5<-lm(imdb_score~poly(num_voted_users,2)+poly(num_critic_for_reviews,2)+poly(num_user_for_reviews,2)+poly(duration,2)+gross+poly(budget,2)+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews,data=movie_train)
+summary(lm.fit5)
+```
+
+```{r}
+anova(lm.fit4,lm.fit5) 
+```
+lm.fit5 is not betetr than lm.fit4. Also,lm.fit4 has higher R^2(0.5442). therefore, lm.fit4 better. 
+
+Diagnostics for lm.fit5:
+```{r}
+plot(lm.fit4)
+```
+
+```{r}
+library(car)
+residualPlots(lm.fit4)
+```
+everything looks good since they are straight line. But the resudial vs fitted is cerved. 
+
+
+Marginal Model plot:
+```{r}
+library(car)
+marginalModelPlots(lm.fit4)
+```
+Good fit. Model doing well. 
+
+
+Check for residual ourliers:
+Note: the reslur outliers are from the whole dataset, instead of train.
+```{r}
+library(car)
+qqPlot(lm.fit4$residuals,id.n = 20)
+```
+
+```{r}
+library(car)
+outlierTest(lm.fit4) # H0: residual is not an outlier
+```
+All of the 10 residuals have significant p-values, therefore, we can drop them.
+
+Before we drop, let's do some digsnostics to double check which to drop.
+```{r}
+library(car)
+influencePlot(lm.fit4, id.n=20)
+```
+From the influcence plot, we decided to drop observations:
+3268,3281,98,837,4708,1602,2835,3467,4929,1938
+
+```{r}
+# lm.fit5: model based on lm.fit3 removing 10 outliers.
+movie_train<-movie_train[-c(3268,3281,98,837,4708,1602,2835,3467,4929,1938),]
+
+lm.fit6<-lm(imdb_score~poly(num_voted_users,2)+poly(num_critic_for_reviews,2)+poly(num_user_for_reviews,2)+poly(duration,2)+poly(gross,2)+poly(movie_facebook_likes,2)+poly(budget,2)+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews+gross*budget,data=movie_train)
+summary(lm.fit6)
+```
+
+```{r}
+compareCoefs(lm.fit4, lm.fit6)
+```
+Removing outliers did not change the cefficients too much.
+
+Diagnostics for lm.fit6:
+```{r}
+library(car)
+residualPlots(lm.fit6)
+```
+Looks good except for residuals vs fitted values show some curviture.But, in the box plot for genre, the spread for box is not always the same, which might be a problem.
+
+```{r}
+plot(lm.fit6)
+```
+
+Now,let's look at model assumption for both lm.fit3 and lm.fit5:
+```{r}
+# normality
+shapiro.test(lm.fit4$residuals)
+shapiro.test(lm.fit6$residuals)
+```
+Both models failed the normality assumption. I think this is due to the many outliers in the data set. 
+
+```{r}
+# equal variance : H0: variance is not constant
+library(car)
+ncvTest(lm.fit4)
+ncvTest(lm.fit6)
+```
+Both models passed the equal variance assumption. 
+
+This is just to explore more interesting facts
+Plots for data with fitted regression line:
+```{r}
+library(ggplot2)
+ggplot(data=movie_train,aes(x=duration,y=imdb_score,colour=factor(genres)))+stat_smooth(method=lm,fullrange = FALSE)+geom_point()
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(data=movie_train,aes(x=num_voted_users,y=imdb_score,colour=factor(genres)))+stat_smooth(method=lm,fullrange = FALSE)+geom_point()
+```
+
+```{r}
+library(ggplot2)
+ggplot(data=movie_train,aes(x=facenumber_in_poster,y=imdb_score,colour=factor(genres)))+stat_smooth(method=lm,fullrange = FALSE)+geom_point()
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(data=movie_train,aes(x=gross,y=imdb_score,colour=factor(genres)))+stat_smooth(method=lm,fullrange = FALSE)+geom_point()
+```
+
+```{r}
+library(ggplot2)
+ggplot(data=movie_train,aes(x=budget,y=imdb_score,colour=factor(genres)))+stat_smooth(method=lm,fullrange = FALSE)+geom_point()
+```
+
+
+##Step 4: Making predictions on the test dataset
+Rewriting model lm.fit5 in another notation:
+# Note, if write in lm(train$score~train$x1+train$x2....), it will create the same number of values with the train data set when predict().
+
+
+```{r}
+# lm.fit7 =lm.fit 6 using difference writing
+lm.fit7<-lm(imdb_score~poly(num_voted_users,2)+poly(num_critic_for_reviews,2)+poly(num_user_for_reviews,2)+poly(duration,2)+poly(gross,2)+poly(movie_facebook_likes,2)+poly(budget,2)+factor(title_year)+factor(genres)+duration*num_voted_users+num_voted_users*num_user_for_reviews+gross*budget,data=movie_train)
+summary(lm.fit7)
+```
+
+
+```{r}
+pr<-predict.lm(lm.fit7,newdata = data.frame(movie_test),interval = 'confidence')
+pr
+```
+We can't make prediction. since our test data does not include all the levels of years.
+
+Conclusion: lm.fit7 would be out final model.
+
+
+Get hands firty exploring other models:
+
+```{r}
+#vote,genre,year,critic,user,budget,duration,mvfclike, vo*duration
+lm.fit8<-lm(imdb_score~num_voted_users+num_critic_for_reviews+num_user_for_reviews+budget+duration+movie_facebook_likes+factor(genres)+factor(title_year)+num_voted_users*duration,data=movie_train)
+summary(lm.fit8)
+```
+Not good. 
+
+```{r}
+lm.fit9<-lm(imdb_score~poly(num_voted_users,2)+poly(num_critic_for_reviews,2)+poly(num_user_for_reviews,2)+poly(budget,2)+poly(duration,2)+poly(movie_facebook_likes,2)+factor(genres)+factor(title_year)+num_voted_users*duration,data=movie_train)
+summary(lm.fit9)
+```
+
+
+Try to add some interaction terms:
+```{r}
+# adding interaction :movie_facebook_likes*budget
+lm.fit10<-lm(imdb_score~poly(num_voted_users,2)+poly(num_critic_for_reviews,2)+poly(num_user_for_reviews,2)+poly(budget,2)+poly(duration,2)+poly(movie_facebook_likes,2)+factor(genres)+factor(title_year)+num_voted_users*duration+budget*num_critic_for_reviews+movie_facebook_likes*budget,data=movie_train)
+summary(lm.fit10)
+```
+
+```{r}
+AIC(lm.fit6)
+AIC(lm.fit7)
+AIC(lm.fit8)
+AIC(lm.fit9)
+AIC(lm.fit10)
+```
+
+```{r}
+# full4 based on lm.fit7 + interaction
+full4<-lm(movie_train$imdb_score~poly(movie_train$num_voted_users,2)+poly(movie_train$num_critic_for_reviews,2)+poly(movie_train$num_user_for_reviews,2)+poly(movie_train$duration,2)+poly(movie_train$gross,2)+poly(movie_train$movie_facebook_likes,2)+poly(movie_train$budget,2)+factor(movie_train$title_year)+factor(movie_train$genres)+movie_train$duration*movie_train$num_voted_users+movie_train$num_voted_users*movie_train$num_user_for_reviews+movie_train$gross*movie_train$budget+movie_train$movie_facebook_likes*movie_train$budget,data=movie_train) 
+summary(full4)
+```
+
+```{r}
+null1<-lm(movie_train$imdb_score~1) 
+step(null1,scope =list(lower=null,upper=full4),direction='forward')
+
+```
+
+Last try:
+```{r}
+lm.fit11<-lm(imdb_score~poly(movie_train$num_voted_users, 2) + 
+    factor(movie_train$genres) + poly(movie_train$budget, 2) + 
+    poly(movie_train$duration, 2) + poly(movie_train$num_critic_for_reviews, 
+    2) + factor(movie_train$title_year) + poly(movie_train$num_user_for_reviews, 
+    2),data=movie_train)
+summary(lm.fit11)
+
+```
+
+
+```{r}
+AIC(lm.fit11)
+```
+
+
+Conclusion:
+lm.fit 7 is the best.
+###################################### Random forest ###################################################
+
+
+
+
+
+
